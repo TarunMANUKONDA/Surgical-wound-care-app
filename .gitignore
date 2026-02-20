@@ -35,3 +35,7 @@ wheels/
 .vscode/
 *.swp
 *.swo
+
+# SQLite database (local data — do not commit)
+*.db
+backend/uploads/
