@@ -1,5 +1,6 @@
 const API_HOST = import.meta.env.VITE_API_HOST || 'localhost:8000';
-const API_BASE_URL = `http://${API_HOST}/api`;
+const BASE_URL = API_HOST.startsWith('http') ? API_HOST : `http://${API_HOST}`;
+const API_BASE_URL = `${BASE_URL}/api`;
 
 export interface User {
     id: number;
@@ -69,7 +70,7 @@ class AuthService {
         } catch (error) {
             console.error('Login error:', error);
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            return { success: false, error: `Login failed: ${errorMessage}` };
+            return { success: false, error: `Login failed: ${errorMessage} (URL: ${API_BASE_URL}/login)` };
         }
     }
 

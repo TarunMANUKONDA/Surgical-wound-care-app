@@ -19,7 +19,7 @@ class Config:
     MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10485760))  # 10MB
     ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
     
-    # Email/SMTP Configuration
+    # Email/SMTP Configuration (kept for reference, no longer used on Render)
     SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
     SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
     SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
@@ -27,6 +27,11 @@ class Config:
     SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "")
     SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "Surgical Wound Care")
     OTP_EXPIRY_MINUTES = 10  # OTP validity duration
+
+    # Resend API (used for production email delivery — works on Render free tier)
+    RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+    RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "Surgical Wound Care <onboarding@resend.dev>")
+
     
     # CORS
     CORS_ORIGINS = [
@@ -35,8 +40,8 @@ class Config:
         "http://10.0.2.2:5173",   # Android emulator
         "capacitor://localhost",  # Capacitor
         "http://localhost",
-        "http://192.168.0.6:5173", # Local IP Frontend
-        "http://192.168.0.6:8000", # Local IP Backend (Docs)
+        "http://10.235.248.134:5173", # Local IP Frontend
+        "http://10.235.248.134:8000", # Local IP Backend (Docs)
     ]
     
     # Add origins from environment variable

@@ -24,6 +24,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def log_requests(request, call_next):
+    print(f"Incoming request: {request.method} {request.url}")
+    response = await call_next(request)
+    print(f"Response status: {response.status_code}")
+    return response
+
 # Create uploads directory if it doesn't exist
 os.makedirs(config.UPLOAD_DIR, exist_ok=True)
 

@@ -132,6 +132,11 @@ export function LoginScreen({ onNavigate }: LoginScreenProps) {
             </div>
           )}
 
+          {/* API Host Display */}
+          <div className="mt-8 text-center text-xs text-slate-400">
+            <p>Protected by medical-grade encryption</p>
+          </div>
+
           {/* Submit */}
           <button
             type="submit"
