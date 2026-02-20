@@ -74,9 +74,16 @@ async def signup(
     email_sent = send_otp_email(request.email, otp_code, request.name)
     
     if not email_sent:
-        # If email fails but we're in development mode, still return success
-        # This allows testing without SMTP configuration
-        pass
+        # Clean up the user and OTP records since we couldn't deliver the code
+        db.query(EmailVerificationOTP).filter(
+            EmailVerificationOTP.email == request.email
+        ).delete()
+        db.query(User).filter(User.email == request.email).delete()
+        db.commit()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send verification email. Please check your email address and try again."
+        )
     
     return {
         "success": True,
@@ -293,3 +300,112 @@ async def verify_session(
             created_at=user.created_at
         )
     )
+
+
+# ─── Forgot Password Flow ───────────────────────────────────────────────────
+
+@router.post("/forgot-password")
+async def forgot_password(
+    email: str,
+    db: Session = Depends(get_db)
+):
+    """Send a password-reset OTP to the user's email"""
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        # Return success even when user not found to avoid email enumeration
+        return {"success": True, "message": "If this email exists, a reset code has been sent."}
+
+    # Clean up any old UNVERIFIED reset OTPs for this email
+    db.query(EmailVerificationOTP).filter(
+        EmailVerificationOTP.email == "reset:" + email,
+        EmailVerificationOTP.verified == False
+    ).delete()
+
+    otp_code = generate_otp()
+    expires_at = datetime.utcnow() + timedelta(minutes=config.OTP_EXPIRY_MINUTES)
+
+    otp_record = EmailVerificationOTP(
+        email="reset:" + email,   # prefix distinguishes reset from signup OTPs
+        otp_code=otp_code,
+        expires_at=expires_at
+    )
+    db.add(otp_record)
+    db.commit()
+
+    from email_service import send_password_reset_email
+    email_sent = send_password_reset_email(email, otp_code, user.name)
+
+    if not email_sent:
+        db.query(EmailVerificationOTP).filter(
+            EmailVerificationOTP.email == "reset:" + email
+        ).delete()
+        db.commit()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send reset email. Please try again."
+        )
+
+    return {"success": True, "message": "Password reset code sent to your email."}
+
+
+@router.post("/verify-reset-otp")
+async def verify_reset_otp(
+    email: str,
+    otp_code: str,
+    db: Session = Depends(get_db)
+):
+    """Verify the password-reset OTP without changing the password yet"""
+
+    otp_record = db.query(EmailVerificationOTP).filter(
+        EmailVerificationOTP.email == "reset:" + email,
+        EmailVerificationOTP.otp_code == otp_code,
+        EmailVerificationOTP.verified == False
+    ).first()
+
+    if not otp_record:
+        raise HTTPException(status_code=400, detail="Invalid or already used reset code.")
+
+    if otp_record.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Reset code has expired. Please request a new one.")
+
+    # Mark as verified so it can be used once for the reset step
+    otp_record.verified = True
+    db.commit()
+
+    return {"success": True, "message": "Code verified. You may now set a new password."}
+
+
+@router.post("/reset-password")
+async def reset_password(
+    email: str,
+    otp_code: str,
+    new_password: str,
+    db: Session = Depends(get_db)
+):
+    """Reset the user's password — requires a previously verified OTP"""
+
+    # Check that a VERIFIED record exists (set in verify-reset-otp)
+    otp_record = db.query(EmailVerificationOTP).filter(
+        EmailVerificationOTP.email == "reset:" + email,
+        EmailVerificationOTP.otp_code == otp_code,
+        EmailVerificationOTP.verified == True
+    ).first()
+
+    if not otp_record:
+        raise HTTPException(status_code=400, detail="Reset code not verified or already used.")
+
+    if otp_record.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Reset code has expired. Please restart the process.")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    user.password_hash = hash_password(new_password)
+
+    # Delete the used OTP record
+    db.delete(otp_record)
+    db.commit()
+
+    return {"success": True, "message": "Password has been reset successfully."}
