@@ -50,10 +50,15 @@ async def get_history(
                     "warning_signs": rec.warning_signs
                 }
         
+        # Normalize image path for web (convert backslashes to forward slashes, remove ./ prefix)
+        img_path = wound.image_path.replace('\\', '/')
+        if img_path.startswith('./'):
+            img_path = img_path[2:]  # Remove ./ prefix
+        
         wound_data = {
             "wound_id": wound.id,
             "case_id": wound.case_id,
-            "image_path": wound.image_path,
+            "image_path": img_path,
             "original_filename": wound.original_filename,
             "upload_date": wound.upload_date.isoformat(),
             "status": wound.status,
@@ -133,16 +138,73 @@ async def get_cases(
             Wound.upload_date.desc()
         ).first()
         
+        # Normalize path for web (convert backslashes to forward slashes, remove ./ prefix)
+        latest_image = None
+        if latest_wound:
+            img_path = latest_wound.image_path.replace('\\', '/')
+            if img_path.startswith('./'):
+                img_path = img_path[2:]  #Remove ./ prefix
+            latest_image = img_path
+        
         cases_data.append({
             "id": case.id,
             "name": case.name,
             "description": case.description,
             "created_at": case.created_at.isoformat(),
             "wound_count": wound_count,
-            "latest_image": latest_wound.image_path if latest_wound else None
+            "latest_image": latest_image
         })
     
     return CaseResponse(
         success=True,
         cases=cases_data
     )
+
+
+@router.delete("/wounds/{wound_id}")
+async def delete_wound(
+    wound_id: int,
+    db: Session = Depends(get_db)
+):
+    """Delete a wound record and its associated classifications and recommendations"""
+
+    wound = db.query(Wound).filter(Wound.id == wound_id).first()
+    if not wound:
+        raise HTTPException(status_code=404, detail="Wound not found")
+
+    # Delete child recommendations → classifications → wound (cascade order)
+    classifications = db.query(Classification).filter(Classification.wound_id == wound_id).all()
+    for clf in classifications:
+        db.query(Recommendation).filter(Recommendation.classification_id == clf.id).delete()
+    db.query(Classification).filter(Classification.wound_id == wound_id).delete()
+    db.delete(wound)
+    db.commit()
+
+    return {"success": True, "message": f"Wound {wound_id} deleted"}
+
+
+@router.delete("/cases/{case_id}")
+async def delete_case(
+    case_id: int,
+    db: Session = Depends(get_db)
+):
+    """Delete a case and all its wounds, classifications, and recommendations"""
+
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    # Delete all wounds in this case and their children
+    wounds = db.query(Wound).filter(Wound.case_id == case_id).all()
+    for wound in wounds:
+        classifications = db.query(Classification).filter(Classification.wound_id == wound.id).all()
+        for clf in classifications:
+            db.query(Recommendation).filter(Recommendation.classification_id == clf.id).delete()
+        db.query(Classification).filter(Classification.wound_id == wound.id).delete()
+        db.delete(wound)
+
+    db.delete(case)
+    db.commit()
+
+    return {"success": True, "message": f"Case {case_id} and all its wounds deleted"}
+
