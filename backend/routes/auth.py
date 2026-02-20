@@ -72,19 +72,20 @@ async def signup(
     
     # Send OTP email
     email_sent = send_otp_email(request.email, otp_code, request.name)
-    
+
     if not email_sent:
-        # Clean up the user and OTP records since we couldn't deliver the code
-        db.query(EmailVerificationOTP).filter(
-            EmailVerificationOTP.email == request.email
-        ).delete()
-        db.query(User).filter(User.email == request.email).delete()
-        db.commit()
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to send verification email. Please check your email address and try again."
-        )
-    
+        # Email delivery failed but we keep the account + OTP alive.
+        # The OTP was already printed to server logs (dev fallback).
+        # Return success so the user can still proceed — they can resend later.
+        print(f"⚠️  Email delivery failed for {request.email}. OTP={otp_code} (check server logs)")
+        return {
+            "success": True,
+            "message": "Account created. Email delivery failed — please use the Resend Code option on the next screen.",
+            "email": request.email,
+            "otp_sent": False,
+            "email_delivery_failed": True
+        }
+
     return {
         "success": True,
         "message": "OTP sent to your email",
