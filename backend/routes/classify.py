@@ -91,26 +91,50 @@ Provide your response in this exact JSON format:
   "notes": "Explain your calculation: e.g., 'Central pale area is Slough (Yellow), not Pink.'"
 }"""
         
-        # Call Gemini API
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content([uploaded_file, prompt])
+        # Try available Flash models (VERIFIED WORKING)
+        model_names = [
+            'models/gemini-2.5-flash', 
+            'models/gemini-flash-latest', 
+            'models/gemini-2.0-flash-lite',
+            'models/gemini-3-flash-preview',
+            'models/gemini-1.5-flash', 
+            'models/gemini-1.5-flash-8b'
+        ]
+        response = None
+        last_error = None
+        
+        for m_name in model_names:
+            try:
+                model = genai.GenerativeModel(m_name)
+                response = model.generate_content(
+                    [uploaded_file, prompt],
+                    generation_config={"response_mime_type": "application/json"}
+                )
+                if response:
+                    break
+            except Exception as e:
+                last_error = e
+                continue
+        
+        if not response:
+            raise last_error or Exception("All Gemini models failed")
         
         processing_time = int((time.time() - start_time) * 1000)
         
         # Parse response
         response_text = response.text.strip()
         
-        # Try to extract JSON from response
-        if "```json" in response_text:
-            json_start = response_text.find("```json") + 7
-            json_end = response_text.find("```", json_start)
-            response_text = response_text[json_start:json_end].strip()
-        elif "```" in response_text:
-            json_start = response_text.find("```") + 3
-            json_end = response_text.find("```", json_start)
-            response_text = response_text[json_start:json_end].strip()
-        
-        result = json.loads(response_text)
+        # Robust JSON extraction
+        try:
+            result = json.loads(response_text)
+        except json.JSONDecodeError:
+            # Fallback: extract substring between { and }
+            start = response_text.find("{")
+            end = response_text.rfind("}") + 1
+            if start >= 0 and end > start:
+                result = json.loads(response_text[start:end])
+            else:
+                raise
         
         # Save classification to database
         classification = Classification(
